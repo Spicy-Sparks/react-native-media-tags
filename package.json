@@ -1,8 +1,8 @@
 {
   "name": "react-native-mediatags",
   "title": "React Native Mediatags",
-  "version": "1.0.1",
-  "description": "TODO",
+  "version": "1.0.2",
+  "description": "Get media tags for media files",
   "main": "index.js",
   "scripts": {
     "test": "echo \"Error: no test specified\" && exit 1"
