@@ -1,4 +1,3 @@
-import PropTypes from 'prop-types';
 import React from 'react';
 import { NativeModules, requireNativeComponent } from 'react-native';
 
@@ -8,10 +7,6 @@ export class Artwork extends React.Component {
   render() {
     return <RNTArtwork {...this.props} />
   }
-}
-
-Artwork.propTypes = {
-  src: PropTypes.string
 }
 
 const RNTArtwork = requireNativeComponent('RNTArtwork', Artwork);

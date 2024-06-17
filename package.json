@@ -1,7 +1,7 @@
 {
   "name": "react-native-mediatags",
   "title": "React Native Mediatags",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "description": "Get media tags for media files",
   "main": "index.js",
   "scripts": {
