@@ -48,6 +48,7 @@ public class MediatagsModule extends ReactContextBaseJavaModule {
             resultData.putString("artist", retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST));
             resultData.putString("album", retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM));
             resultData.putString("title", retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE));
+            resultData.putString("albumArtist", retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUMARTIST));
 
             callback.resolve(resultData);
         }

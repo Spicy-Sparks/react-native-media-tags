@@ -37,8 +37,34 @@ RCT_REMAP_METHOD(getMetaData, filePath:(NSString *)filePath resolver:(RCTPromise
             }
         }
     }
-    
-    NSDictionary *dict = @{ @"artist": artist, @"title": title, @"album": album };
+
+    // Album-artist has no AVFoundation commonKey (unlike artist/title/album), so
+    // it must be read from the format-specific tag: ID3 `TPE2` (band/orchestra)
+    // or iTunes/MP4 `aART`. Matched by the metadata item identifier so both
+    // container formats are covered. Kept separate from the artist/title/album
+    // path above so it works regardless of which of those branches ran.
+    NSString *albumArtist = @"";
+    {
+        NSURL *aaURL = [NSURL fileURLWithPath:filePath];
+        AVAsset *aaAsset = [AVURLAsset URLAssetWithURL:aaURL options:nil];
+        for (NSString *format in [aaAsset availableMetadataFormats]) {
+            for (AVMetadataItem *item in [aaAsset metadataForFormat:format]) {
+                NSString *idStr = [item identifier] ?: @"";
+                NSString *keyStr = [[item key] isKindOfClass:[NSString class]] ? (NSString *)[item key] : @"";
+                BOOL isAlbumArtist =
+                    [idStr containsString:@"aART"] ||
+                    [idStr containsString:@"TPE2"] ||
+                    [idStr containsString:@"AlbumArtist"] ||
+                    [keyStr isEqualToString:@"aART"] ||
+                    [keyStr isEqualToString:@"TPE2"];
+                if (isAlbumArtist && [[item value] isKindOfClass:[NSString class]]) {
+                    albumArtist = (NSString *)[item value];
+                }
+            }
+        }
+    }
+
+    NSDictionary *dict = @{ @"artist": artist, @"title": title, @"album": album, @"albumArtist": albumArtist };
     resolve(dict);
 }
 
