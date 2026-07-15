@@ -21,6 +21,7 @@ import com.facebook.react.bridge.WritableNativeMap;
 
 import java.io.ByteArrayOutputStream;
 import java.io.File;
+import java.io.FileInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.util.HashMap;
@@ -100,7 +101,17 @@ public class MediatagsModule extends ReactContextBaseJavaModule {
     private String readId3v2TextFrame(String filePath, String frameId) {
         InputStream is = null;
         try {
-            is = getReactApplicationContext().getContentResolver().openInputStream(Uri.parse(filePath));
+            Uri uri = Uri.parse(filePath);
+            String scheme = uri.getScheme();
+            if ("content".equals(scheme)) {
+                is = getReactApplicationContext().getContentResolver().openInputStream(uri);
+            } else {
+                // Imported copies land in the app's files dir as a plain filesystem
+                // path (or a file:// URI) — ContentResolver can't open those, so read
+                // the file directly. This is the path getMetaData actually receives.
+                String rawPath = ("file".equals(scheme) && uri.getPath() != null) ? uri.getPath() : filePath;
+                is = new FileInputStream(rawPath);
+            }
             if (is == null) return null;
 
             byte[] header = new byte[10];
