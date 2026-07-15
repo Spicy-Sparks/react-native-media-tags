@@ -22,6 +22,7 @@ import com.facebook.react.bridge.WritableNativeMap;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
 import java.util.HashMap;
 
 public class MediatagsModule extends ReactContextBaseJavaModule {
@@ -48,7 +49,16 @@ public class MediatagsModule extends ReactContextBaseJavaModule {
             resultData.putString("artist", retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ARTIST));
             resultData.putString("album", retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUM));
             resultData.putString("title", retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_TITLE));
-            resultData.putString("albumArtist", retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUMARTIST));
+
+            // Android's MediaMetadataRetriever.METADATA_KEY_ALBUMARTIST is unreliable
+            // for MP3 ID3v2 — it frequently returns null even when a TPE2 frame is
+            // present. Try it first, then fall back to reading the TPE2 frame straight
+            // out of the ID3v2 tag so album-artist disambiguation works on MP3s too.
+            String albumArtist = retriever.extractMetadata(MediaMetadataRetriever.METADATA_KEY_ALBUMARTIST);
+            if (albumArtist == null || albumArtist.isEmpty()) {
+                albumArtist = readId3v2TextFrame(filePath, "TPE2");
+            }
+            resultData.putString("albumArtist", albumArtist);
 
             callback.resolve(resultData);
         }
@@ -79,5 +89,89 @@ public class MediatagsModule extends ReactContextBaseJavaModule {
         } catch (Exception e) {
             callback.invoke(e);
         }
+    }
+
+    /**
+     * Read a single ID3v2 text frame (e.g. TPE2 = album artist) directly from the
+     * file, because MediaMetadataRetriever does not expose every frame on MP3.
+     * Only the tag region at the head of the file is read. Returns null when the
+     * frame is absent or the file has no readable ID3v2 tag.
+     */
+    private String readId3v2TextFrame(String filePath, String frameId) {
+        InputStream is = null;
+        try {
+            is = getReactApplicationContext().getContentResolver().openInputStream(Uri.parse(filePath));
+            if (is == null) return null;
+
+            byte[] header = new byte[10];
+            if (readFully(is, header, 10) != 10) return null;
+            if (header[0] != 'I' || header[1] != 'D' || header[2] != '3') return null;
+
+            int majorVersion = header[3] & 0xFF;
+            int tagSize = ((header[6] & 0x7F) << 21) | ((header[7] & 0x7F) << 14)
+                    | ((header[8] & 0x7F) << 7) | (header[9] & 0x7F);
+            if (tagSize <= 0 || tagSize > 5 * 1024 * 1024) return null;
+
+            byte[] tag = new byte[tagSize];
+            int read = readFully(is, tag, tagSize);
+            if (read <= 0) return null;
+
+            byte[] wanted = frameId.getBytes("ISO-8859-1");
+            int pos = 0;
+            while (pos + 10 <= read) {
+                // A zero id byte marks the start of padding — stop scanning.
+                if (tag[pos] == 0) break;
+
+                int frameSize;
+                if (majorVersion >= 4) {
+                    frameSize = ((tag[pos + 4] & 0x7F) << 21) | ((tag[pos + 5] & 0x7F) << 14)
+                            | ((tag[pos + 6] & 0x7F) << 7) | (tag[pos + 7] & 0x7F);
+                } else {
+                    frameSize = ((tag[pos + 4] & 0xFF) << 24) | ((tag[pos + 5] & 0xFF) << 16)
+                            | ((tag[pos + 6] & 0xFF) << 8) | (tag[pos + 7] & 0xFF);
+                }
+                if (frameSize <= 0 || pos + 10 + frameSize > read) break;
+
+                if (tag[pos] == wanted[0] && tag[pos + 1] == wanted[1]
+                        && tag[pos + 2] == wanted[2] && tag[pos + 3] == wanted[3]) {
+                    int dataStart = pos + 10;
+                    int encoding = tag[dataStart] & 0xFF;
+                    int textStart = dataStart + 1;
+                    int textLen = frameSize - 1;
+                    if (textLen <= 0) return null;
+
+                    String charset;
+                    switch (encoding) {
+                        case 0: charset = "ISO-8859-1"; break;
+                        case 1: charset = "UTF-16"; break;
+                        case 2: charset = "UTF-16BE"; break;
+                        default: charset = "UTF-8"; break;
+                    }
+                    String value = new String(tag, textStart, textLen, charset);
+                    int nul = value.indexOf('\0');
+                    if (nul >= 0) value = value.substring(0, nul);
+                    value = value.trim();
+                    return value.isEmpty() ? null : value;
+                }
+                pos += 10 + frameSize;
+            }
+            return null;
+        } catch (Exception e) {
+            return null;
+        } finally {
+            if (is != null) {
+                try { is.close(); } catch (IOException ignored) { }
+            }
+        }
+    }
+
+    private int readFully(InputStream is, byte[] buffer, int length) throws IOException {
+        int total = 0;
+        while (total < length) {
+            int n = is.read(buffer, total, length - total);
+            if (n < 0) break;
+            total += n;
+        }
+        return total;
     }
 }
